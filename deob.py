@@ -46,64 +46,9 @@ def get_rel_jmp_dest(ea):
 def get_rel32_lea(ea):
     return ctypes.c_long(idc.get_wide_dword(ea + 3)).value + ea + 7
 
-def get_if_obfuscated_jmp(ea, JMP_PATTERN):
-    TOTAL = len(JMP_PATTERN)
+def test_pattern(ea, on_inst_match, PATTERN):
+    TOTAL = len(PATTERN)
     matched = 0
-    lea = None
-    while matched < TOTAL:
-        disasm = idc.GetDisasm(ea)
-        if is_rel_jmp(ea):
-            ea = get_rel_jmp_dest(ea)
-            continue
-        
-        decoded = idautils.DecodeInstruction(ea)
-        if decoded is None:
-            return None
-        
-        if decoded.size != len(JMP_PATTERN[matched]):
-            return None
-        for i, x in enumerate(JMP_PATTERN[matched]):
-            if x is None:
-                continue
-            if idc.get_wide_byte(ea + i) != x:
-                return None
-        matched += 1
-        if is_rel32_lea_rbp(disasm, ea):
-            lea = get_rel32_lea(ea)
-        ea = idc.next_head(ea)
-    return lea
-
-def get_if_obfuscated_call(ea, CALL_PATTERN):
-    TOTAL = len(CALL_PATTERN)
-    matched = 0
-    lea = []
-    while matched < TOTAL:
-        disasm = idc.GetDisasm(ea)
-        if is_rel_jmp(ea):
-            ea = get_rel_jmp_dest(ea)
-            continue
-        
-        decoded = idautils.DecodeInstruction(ea)
-        if decoded is None:
-            return None
-        
-        if decoded.size != len(CALL_PATTERN[matched]):
-            return None
-        for i, x in enumerate(CALL_PATTERN[matched]):
-            if x is None:
-                continue
-            if idc.get_wide_byte(ea + i) != x:
-                return None
-        matched += 1
-        if is_rel32_lea_rbp(disasm, ea):
-            lea.append(get_rel32_lea(ea))
-        ea = idc.next_head(ea)
-    return lea
-
-def is_obfuscated_ret(ea, RET_PATTERN):
-    TOTAL = len(RET_PATTERN)
-    matched = 0
-    lea = None
     while matched < TOTAL:
         disasm = idc.GetDisasm(ea)
         if is_rel_jmp(ea):
@@ -114,30 +59,54 @@ def is_obfuscated_ret(ea, RET_PATTERN):
         if decoded is None:
             return False
         
-        if decoded.size != len(RET_PATTERN[matched]):
+        if decoded.size != len(PATTERN[matched]):
             return False
-        for i, x in enumerate(RET_PATTERN[matched]):
+        for i, x in enumerate(PATTERN[matched]):
             if x is None:
                 continue
             if idc.get_wide_byte(ea + i) != x:
                 return False
+        if callable(on_inst_match):
+                on_inst_match(ea, disasm)
         matched += 1
         ea = idc.next_head(ea)
     return True
 
 def is_obfu_ret1(ea):
-    return is_obfuscated_ret(ea, OBFU_RET1)
+    return test_pattern(ea, None, OBFU_RET1)
 
-def get_if_obfu_jmp1(ea):
-    return get_if_obfuscated_jmp(ea, OBFU_JMP1)
+def get_if_obfuscated_jmp(ea, JMP_PATTERN):
+    lea = None
+    def callback(e, d):
+        if is_rel32_lea_rbp(d, e):
+            nonlocal lea
+            lea = get_rel32_lea(e) 
+    test_pattern(ea, callback, JMP_PATTERN)
+    return lea
 
-def get_if_obfu_jmp2(ea):
-    return get_if_obfuscated_jmp(ea, OBFU_JMP2)
+def get_if_obfuscated_call(ea, CALL_PATTERN):
+    lea = []
+    def callback(e, d):
+        if is_rel32_lea_rbp(d, e):
+            nonlocal lea
+            lea.append(get_rel32_lea(e)) 
+    if not test_pattern(ea, callback, CALL_PATTERN):
+        return None
+    return lea
 
-def get_if_obfu_jmp3(ea):
-    return get_if_obfuscated_jmp(ea, OBFU_JMP3)
+def get_if_obfu_jmp(ea):
+    temp = get_if_obfuscated_jmp(ea, OBFU_JMP1)
+    if temp is not None:
+        return temp
+    temp = get_if_obfuscated_jmp(ea, OBFU_JMP2)
+    if temp is not None:
+        return temp
+    temp = get_if_obfuscated_jmp(ea, OBFU_JMP3)
+    if temp is not None:
+        return temp
+    return None
 
-def get_if_obfu_call1(ea):
+def get_if_obfu_call(ea):
     return get_if_obfuscated_call(ea, OBFU_CALL1)
 
 def deob_print(ea):
@@ -148,22 +117,12 @@ def deob_print(ea):
             ea = get_rel_jmp_dest(ea)
             continue
 
-        obfuj = get_if_obfu_jmp1(ea)
+        obfuj = get_if_obfu_jmp(ea)
         if obfuj is not None:
             ea = obfuj
             continue
 
-        obfuj = get_if_obfu_jmp2(ea)
-        if obfuj is not None:
-            ea = obfuj
-            continue
-
-        obfuj = get_if_obfu_jmp3(ea)
-        if obfuj is not None:
-            ea = obfuj
-            continue
-
-        obfuc = get_if_obfu_call1(ea)
+        obfuc = get_if_obfu_call(ea)
         if (obfuc is not None) and (len(obfuc) == 2):
             print("{:016X} OBFUCALL {:016X}".format(ea, obfuc[1]))
             ea = obfuc[0]
