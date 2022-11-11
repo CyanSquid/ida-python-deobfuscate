@@ -180,7 +180,7 @@ def process_chunk(fea, cea):
         if is_obfu_ret(ea):
             patch_bytes(ea, 0xC3)
             idc.set_cmt(ea, "[5fcc3e45 - deob] Deob has modified this code", 0)
-            chunk_end = ea + 1 # 1 = sizeof rel32 jmp
+            chunk_end = ea + 1 # 1 = sizeof retn
             break
 
         if idc.GetDisasm(ea).startswith("ret"):
