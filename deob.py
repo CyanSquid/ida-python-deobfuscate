@@ -109,6 +109,15 @@ def get_if_obfu_jmp(ea):
         return temp
     return None
 
+def get_if_any_jmp(ea):
+    if is_rel_jmp(ea):
+        return get_rel_jmp_dest(ea)
+
+    obfuj = get_if_obfu_jmp(ea)
+    if obfuj is not None:
+        return obfuj
+    return None
+
 def get_if_obfu_call(ea):
     return get_if_obfuscated_call(ea, OBFU_CALL1)
 
@@ -155,6 +164,14 @@ def get_rel32_lea(ea):
 
 # ==================== main funcs ====================
 
+def get_target_if_jmp_chain(ea):
+    target = get_if_any_jmp(ea)
+    if target is None:
+        return None
+    while (ea := get_if_any_jmp(target)):
+        target = ea
+    return target
+
 def add_function_chunk(ea, start, end):
     print("chunk: {:X} : {:X}".format(start, end))
     idaapi.append_func_tail(idaapi.get_func(ea), start, end)
@@ -165,22 +182,28 @@ def process_chunk(fea, cea):
     chunk_end = None
     ea = cea
     while True:
-        if is_rel_jmp(ea):
-            decoded = idautils.DecodeInstruction(ea)
-            chunk_end = ea + decoded.size
-            break
+        #if is_rel_jmp(ea):
+        #    decoded = idautils.DecodeInstruction(ea)
+        #    chunk_end = ea + decoded.size
+        #    break
 
-        obfuj = get_if_obfu_jmp(ea)
-        if obfuj is not None:
-            patch_place_rel32_jmp(ea, obfuj)
+        #obfuj = get_if_obfu_jmp(ea)
+        #if obfuj is not None:
+        #    patch_place_rel32_jmp(ea, obfuj)
+        #    idc.set_cmt(ea, "[5fcc3e45 - deob] Deob has modified this code", 0)
+        #    chunk_end = ea + 5 # 5 = sizeof rel32 jmp
+        #    break
+        target = get_target_if_jmp_chain(ea)
+        if target is not None:
+            patch_place_rel32_jmp(ea, target) # TODO: Check if we have enough space to write a jmp
             idc.set_cmt(ea, "[5fcc3e45 - deob] Deob has modified this code", 0)
             chunk_end = ea + 5 # 5 = sizeof rel32 jmp
             break
-
+        
         if is_obfu_ret(ea):
             patch_bytes(ea, 0xC3)
             idc.set_cmt(ea, "[5fcc3e45 - deob] Deob has modified this code", 0)
-            chunk_end = ea + 1 # 1 = sizeof retn
+            chunk_end = ea + 1 # 1 = sizeof rel32 jmp
             break
 
         if idc.GetDisasm(ea).startswith("ret"):
