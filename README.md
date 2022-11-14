@@ -6,7 +6,7 @@ IDA Python script for deobfuscating code protected with Arxan.
 
 WIP.
 
-Currently only supports deobfuscation of basic instructions: `jmp, call, ret`
+Currently only supports deobfuscation of basic instructions: `jmp, jne, je, call, ret`
 
 Load file in ida via `File > Script file...`
 
